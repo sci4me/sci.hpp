@@ -4,7 +4,7 @@
 // TODO: Improve/Expand Allocators
 //		  - realloc?
 // TODO: Add more string functions
-//		  - strview
+//		  - strview -- I no longer recall what this was meant to do lol
 // TODO: Add (more) file I/O
 // TODO: Add high-water mark to Temporary_Storage
 // TODO: Add fallback allocation with logging 
@@ -23,13 +23,15 @@
 // TODO: Add a base64 codec
 // TODO: Add RLE codec
 // TODO: Add intel hex encoder
+// 	 	  - Also SRec?
 // TODO: Add sorting functions for Array<T>, etc.
 // TODO: Add some logging stuff maybe?
 // TODO: Add a segment tree
 // TODO: Add a "Sparse Set" (the funky one w/ uninit memory)
 //		   - Also, "Sparse Map", because it's free to add ^
 // TODO: Maybe have some form of 32-bit support? :/
-
+// TODO: Add more filesystem helper stuff?
+// TODO: Make sure this stuff works on winderps..... :/
 
 
 ////////////////////////////////////
