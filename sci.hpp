@@ -32,6 +32,14 @@
 // TODO: Maybe have some form of 32-bit support? :/
 // TODO: Add more filesystem helper stuff?
 // TODO: Make sure this stuff works on winderps..... :/
+// TODO: Add bignum structs
+//		  - BigInt
+//		  - BigRat?
+//		  - BigDecimal?
+//		  - Maybe also special things like u128/s128?
+//			- May be a thing that already exists for larger
+//			  CPU registers/SIMD *shrugs*
+
 
 
 ////////////////////////////////////
@@ -210,9 +218,6 @@ void swap(T *a, T *b) {
 #define SECTION_FOREACH(section_name, type, iter)                           \
     for(type const* iter = SECTION_START_SYMBOL(section_name, type);        \
         iter < SECTION_STOP_SYMBOL(section_name, type); iter++)
-
-#else
-
 #endif
 
 
