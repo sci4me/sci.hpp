@@ -915,6 +915,14 @@ bool str_eq_fn(str const& a, str const& b) {
 	return streq(a, b);
 }
 
+u32 cstr_hash_fn(cstr const& s) {
+    return murmur3((void const*) s, strlen(s), HASH_TABLE_DEFAULT_SEED);
+}
+
+bool cstr_eq_fn(cstr const& a, cstr const& b) {
+    return strcmp(a, b) == 0;
+}
+
 template<typename V>
 using Dictionary = Hash_Table<str, V, str_hash_fn>;
 
