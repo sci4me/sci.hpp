@@ -923,9 +923,6 @@ bool cstr_eq_fn(cstr const& a, cstr const& b) {
     return strcmp(a, b) == 0;
 }
 
-template<typename V>
-using Dictionary = Hash_Table<str, V, str_hash_fn>;
-
 
 /////////////////////
 ///    Testing    ///
