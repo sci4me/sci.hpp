@@ -1068,7 +1068,6 @@ ALLOC_FN(temp_alloc) {
 }
 
 FREE_FN(temp_free) {
-	assert(false);
 }
 
 void* talloc(u64 n) {
