@@ -402,6 +402,7 @@ inline void  operator delete(void*, void*) {}
 
 struct Temporary_Storage {
 	u64 used;
+    u64 high_water_mark;
 	u8 data[];
 };
 
@@ -1055,6 +1056,7 @@ ALLOC_FN(temp_alloc) {
 	assert(ts->used + n < TEMPORARY_STORAGE_SIZE);
 	void *p = &ts->data[ts->used];
 	ts->used += n; // TODO: align
+    if(ts->used > ts->high_water_mark) ts->high_water_mark = ts->used;
 	return p;
 }
 
