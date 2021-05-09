@@ -1085,7 +1085,7 @@ void treset() {
 
 
 Arena* arena_new(u64 block_size) {
-	auto allocator = (Allocator*) xalloc(sizeof(Allocator) + sizeof(Arena));
+	auto allocator = cast(Allocator*, xalloc(sizeof(Allocator) + sizeof(Arena)));
 	auto arena = new(allocator->data) Arena(block_size);
 	allocator->prev = NULL;
 	allocator->alloc = arena_alloc;
@@ -1217,7 +1217,7 @@ str mkstr(cstr s, u64 n, Allocator *a) {
 	_str *r = cast(_str*, xalloc(sizeof(_str) + n + 1, a2));
 	r->a = a2;
 	r->size = n;
-	memcpy(r->data, s, n);
+	if(s) memcpy(r->data, s, n);
 	r->data[n] = 0;
 	return r->data;
 }
