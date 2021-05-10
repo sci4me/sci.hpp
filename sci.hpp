@@ -1052,6 +1052,7 @@ constructor void temp_alloc_init() {
 	temp_allocator->free = temp_free;
 	temporary_storage = cast(Temporary_Storage*, (temp_allocator + sizeof(Allocator)));
 	temporary_storage->used = 0;
+    temporary_storage->high_water_mark = 0;
 }
 
 destructor void temp_alloc_deinit() {
@@ -1266,6 +1267,7 @@ str tvsprintf(rstr fmt, va_list args) {
 	auto r = cast(_str*, xalloc(sizeof(_str) + n + 1, temp_allocator));
 	vsprintf(r->data, fmt, args);
 	r->data[n] = 0;
+    r->size = n;
 	return r->data;
 }
 
