@@ -773,8 +773,8 @@ struct Hash_Table {
 	}
 
 	void resize(u32 new_size) {
-		assert(size);
-		assert((size & (size - 1)) == 0);
+		assert(new_size);
+		new_size = next_pow2(new_size);
 
 		u32 old_count = count;
 		u32 old_size = size;
@@ -895,7 +895,7 @@ struct Hash_Table {
 		count--;
 
 		if(load_factor() < HASH_TABLE_LOAD_FACTOR_SHRINK_THRESHOLD) {
-			resize(size / 2);
+			resize(max(size / 2, HASH_TABLE_DEFAULT_SIZE));
 		}
 
 		return true;
