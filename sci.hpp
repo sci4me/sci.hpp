@@ -57,6 +57,7 @@
 //			- May be a thing that already exists for larger
 //			  CPU registers/SIMD *shrugs*
 // TODO: Add a JSON parser/printer and "object model", as it were.
+// TODO: Make xnew/xanew support arrays
 
 
 
@@ -127,16 +128,24 @@
 #endif
 
 
-typedef unsigned char u8;
-typedef signed char s8;
-typedef unsigned short u16;
-typedef signed short s16;
-typedef unsigned int u32;
-typedef signed int s32;
-typedef unsigned long long u64;
-typedef signed long long s64;
-typedef float f32;
-typedef double f64;
+#define INTEGRAL_TYPES(X)      \
+    X(u8, unsigned char)       \
+    X(u16, unsigned short)     \
+    X(u32, unsigned int)       \
+    X(u64, unsigned long long) \
+    X(s8, signed char)         \
+    X(s16, signed short)       \
+    X(s32, signed int)         \
+    X(s64, signed long long)
+
+#define FLOAT_TYPES(X) \
+    X(f32, float)      \
+    X(f64, double) 
+
+#define X(name, ctype) typedef ctype name;
+INTEGRAL_TYPES(X)
+FLOAT_TYPES(X)
+#undef X
 
 
 // Don't @ me.
@@ -158,10 +167,6 @@ static_assert(sizeof(f64) == 8);
 
 #define array_length(a) ((sizeof(a))/(sizeof(a[0])))
 #define cast(t, v) ((t)(v))
-
-
-#define rotl32(x, r) ((x<<r)|(x>>(32-r)))
-#define rotl64(x, r) ((x<<r)|(x>>(64-r)))
 
 
 #ifndef NULL
@@ -251,7 +256,54 @@ void swap(T& a, T& b) {
 ///////////////////
 
 
-constexpr u32 next_pow2(u32 y) {
+// NOTE: I did this after trying to write each of these
+// as a single function template taking type `t`. But yknow,
+// sometimes C++ just doesn't feel like working so meh.
+#define DEFROT(t)                             \
+    constexpr t rotl(t x, t s) noexcept {     \
+        t mask = sizeof(t) * 8 - 1;           \
+        s &= mask;                            \
+        return (x << s) | (x >> (-s & mask)); \
+    }                                         \
+    constexpr t rotr(t x, t s) noexcept {     \
+        t mask = sizeof(t) * 8 - 1;           \
+        s &= mask;                            \
+        return (x >> s) | (x << (-s & mask)); \
+    }
+DEFROT(u8)
+DEFROT(u16)
+DEFROT(u32)
+DEFROT(u64)
+#undef DEFROT
+
+
+// NOTE: And despite the NOTE above about the rotl/rotr functions,
+// so far, is_pow2 has caused to trouble. WTF C++? Either work or don't!
+template<typename T>
+constexpr bool is_pow2(T x) noexcept { return x > 0 && (x & (x - 1) == 0); }
+
+constexpr u8 next_pow2(u8 y) noexcept {
+	u8 x = y;
+	x--;
+	x |= x >> 1;
+	x |= x >> 2;
+	x |= x >> 4;
+	x++;
+	return x;
+}
+
+constexpr u16 next_pow2(u16 y) noexcept {
+	u16 x = y;
+	x--;
+	x |= x >> 1;
+	x |= x >> 2;
+	x |= x >> 4;
+	x |= x >> 8;
+	x++;
+	return x;
+}
+
+constexpr u32 next_pow2(u32 y) noexcept {
 	u32 x = y;
 	x--;
 	x |= x >> 1;
@@ -263,34 +315,49 @@ constexpr u32 next_pow2(u32 y) {
 	return x;
 }
 
-constexpr u64 align_up(u64 x, u64 align) {
-	assert(0 == (align & (align - 1)) && "must align to a power of two");
+constexpr u64 next_pow2(u64 y) noexcept {
+	u64 x = y;
+	x--;
+	x |= x >> 1;
+	x |= x >> 2;
+	x |= x >> 4;
+	x |= x >> 8;
+	x |= x >> 16;
+	x |= x >> 32;
+	x++;
+	return x;
+}
+
+template<typename T>
+constexpr T align_up(T x, T align) noexcept {
+	assert(is_pow2(x) && "must align to a power of two");
     return (x + (align - 1)) & ~(align - 1);
 }
 
-constexpr u64 align_down(u64 x, u64 align) {
-	assert(0 == (align & (align - 1)) && "must align to a power of two");
+template<typename T>
+constexpr T align_down(T x, T align) noexcept {
+	assert(is_pow2(x) && "must align to a power of two");
     return x - (x & (align - 1));
 }
 
-constexpr u64 pow(u64 base, u64 exp) {
-	if(base == 0 && exp == 0) {
-		return 1;
-	} else if(base == 0) {
-		return 0;
-	} else if(exp == 0) {
-		return 1;
-	}
-
-	u64 result = 1;
-	while(exp) {
-		if(exp & 1) {
-			result *= base;
-		}
-		exp >>= 1;
-		base *= base;
-	}
-	return result;
+template<typename t>
+constexpr t pow(t base, t exp) noexcept {
+    if(base == 0 && exp == 0) {
+        return 1;
+    } else if(base == 0) {
+        return 0;
+    } else if(exp == 0) {
+        return 1;
+    }
+    t result = 1;
+    while(exp) {
+        if(exp & 1) {
+            result *= base;
+        }
+        exp >>= 1;
+        base *= base;
+    }
+    return result;
 }
 
 
@@ -302,14 +369,14 @@ constexpr u64 pow(u64 base, u64 exp) {
 	X(5,  PETA,   PEBI) 		\
 	X(6,  EXA,    EXI )
 
-#define X(i, dec, bin) 						\
-	constexpr u64 dec##BYTE = pow(1000, i);	\
-	constexpr u64 bin##BYTE = pow(1024, i);	\
-	constexpr u64 dec##BYTES(u64 n) {		\
-		return n * dec##BYTE;				\
-	}										\
-	constexpr u64 bin##BYTES(u64 n) {		\
-		return n * bin##BYTE;				\
+#define X(i, dec, bin) 						     \
+	constexpr u64 dec##BYTE = pow<u64>(1000, i); \
+	constexpr u64 bin##BYTE = pow<u64>(1024, i); \
+	constexpr u64 dec##BYTES(u64 n) {		     \
+		return n * dec##BYTE;				     \
+	}										     \
+	constexpr u64 bin##BYTES(u64 n) {		     \
+		return n * bin##BYTE;				     \
 	}
 BYTE_UNIT_MULTIPLES(X)
 #undef X
@@ -348,12 +415,17 @@ constexpr T abs(T x) noexcept {
 
 template<typename T>
 constexpr T lerp(T a, T b, T t) noexcept {
-	return (1 - t)*a + t*b;
+	return (1 - t) * a + t * b;
 }
 
 template<typename T>
-constexpr T map(T x, T in_min, T in_max, T out_min, T out_max) {
-	return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+constexpr T unlerp(T min, T max, T value) noexcept {
+    return (value - min) / (max - min);
+}
+
+template<typename T>
+constexpr T relerp(T in_min, T in_max, T value, T out_min, T out_max) noexcept {
+    return lerp(out_min, out_max, unlerp(in_min, in_max, value));
 }
 
 template<typename T>
@@ -694,6 +766,10 @@ private:
 	}
 };
 
+
+// TODO: Replace this and make it nice; probably can't use the for
+// keyword though because I'm guessing it requires std::* ??
+// But hey, maybe not. I'll check. Someday TM.
 #define FOREACH(a, it) for(u64 it = 0; it < a.count; it++)
 
 
@@ -1166,11 +1242,11 @@ u32 murmur3(void const *input, s32 len, u32 seed) {
 		u32 k = blocks[i];
 
 		k *= C1;
-		k = rotl32(k, 15);
+		k = rotl(k, 15);
 		k *= C2;
 
 		h ^= k;
-		h = rotl32(h, 13);
+		h = rotl(h, 13);
 		h = h * 5 + 0xE6546B64;
 	}
 
@@ -1181,7 +1257,7 @@ u32 murmur3(void const *input, s32 len, u32 seed) {
 		case 2: k ^= tail[1] << 8;
 		case 1: k ^= tail[0];
 				k *= C1;
-				k = rotl32(k, 15);
+				k = rotl(k, 15);
 				k *= C2;
 				h ^= k;
 	}
