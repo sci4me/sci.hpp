@@ -182,11 +182,11 @@ static_assert(sizeof(f64) == 8);
 
 
 // TODO
-#define noreturn 	__attribute__((noreturn))
-#define noinline 	__attribute__((noinline))
-#define forceinline	__attribute__((always_inline))
-#define constructor __attribute__((constructor))
-#define destructor  __attribute__((destructor))
+#define nvrreturn 	  __attribute__((noreturn))
+#define nvrinline 	  __attribute__((noinline))
+#define forceinline	  __attribute__((always_inline))
+#define static_init   __attribute__((constructor))
+#define static_deinit __attribute__((destructor))
 
 
 // TODO
@@ -463,13 +463,12 @@ SCI_DEF void* xalloc(u64 n, Allocator *a = NULL);
 SCI_DEF void xfree(void *p, Allocator *a = NULL);
 
 
-#define xanew(t, a, ...) (new(xalloc(sizeof(t), a)) t(__VA_ARGS__))
+struct _sci_new_wrapper{};
+inline void* operator new(size_t, _sci_new_wrapper, void* ptr) { return ptr; }
+inline void operator delete(void*, _sci_new_wrapper, void*) {}
+#define pnew(t, p, ...) (new(_sci_new_wrapper(), p) t(__VA_ARGS__))
+#define xanew(t, a, ...) pnew(xalloc(sizeof(t), a)), __VA_ARGS__)
 #define xnew(t, ...) xanew(t, allocator, __VA_ARGS__)
-
-
-// Needed to get the placement new w/ xnew working *shrugs*
-inline void* operator new(size_t, void* ptr) { return ptr; }
-inline void  operator delete(void*, void*) {}
 
 
 ///////////////////////////////
@@ -1121,7 +1120,7 @@ void xfree(void *p, Allocator *a) {
 Allocator *temp_allocator;
 Temporary_Storage *temporary_storage;
 
-constructor void temp_alloc_init() {
+static_init void temp_alloc_init() {
 	temp_allocator = cast(Allocator*, xalloc(sizeof(Allocator) + sizeof(Temporary_Storage) + TEMPORARY_STORAGE_SIZE));
 	temp_allocator->prev = NULL;
 	temp_allocator->alloc = temp_alloc;
@@ -1131,7 +1130,7 @@ constructor void temp_alloc_init() {
     temporary_storage->high_water_mark = 0;
 }
 
-destructor void temp_alloc_deinit() {
+static_deinit void temp_alloc_deinit() {
 	xfree(temp_allocator);
 }
 
@@ -1163,7 +1162,7 @@ void treset() {
 
 Arena* arena_new(u64 block_size) {
 	auto allocator = cast(Allocator*, xalloc(sizeof(Allocator) + sizeof(Arena)));
-	auto arena = new(allocator->data) Arena(block_size);
+	auto arena = pnew(Arena, allocator->data, block_size);
 	allocator->prev = NULL;
 	allocator->alloc = arena_alloc;
 	allocator->free = arena_free;
@@ -1197,7 +1196,7 @@ ALLOC_FN(arena_alloc) {
 	auto blk = arena->current_block;
 	if((!blk) || (blk->used + n > arena->block_size)) {
 		auto blkmem = cast(Arena::Block*, xalloc(sizeof(Arena::Block) + arena->block_size));
-		blk = new(blkmem) Arena::Block(arena->current_block);
+		blk = pnew(Arena::Block, blkmem, arena->current_block);
 		arena->current_block = blk;
 		arena->blocks++;
 	}
@@ -1364,7 +1363,7 @@ void tfprintf(FILE *fh, rstr fmt, ...) {
 
 static _istr *interned_strings = NULL;
 
-destructor void free_interned_strings() {
+static_deinit void free_interned_strings() {
 	auto cur = interned_strings;
 	while(cur) {
 		auto prev = cur->prev;
@@ -1412,8 +1411,7 @@ bool isintern(str s) {
 //////////////////////////
 
 
-// TODO: noreturn
-noreturn void panic(rstr fmt, ...) {
+nvrreturn void panic(rstr fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
 	str s = tvsprintf(fmt, args);
@@ -1424,7 +1422,7 @@ noreturn void panic(rstr fmt, ...) {
 }
 
 
-noreturn void todo() {
+nvrreturn void todo() {
 	panic("TODO");
 }
 
