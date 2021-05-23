@@ -143,7 +143,7 @@
     X(f32, float)      \
     X(f64, double) 
 
-#define X(name, ctype) typedef ctype name;
+#define X(name, ctype) using name = ctype;
 INTEGRAL_TYPES(X)
 FLOAT_TYPES(X)
 #undef X
@@ -445,8 +445,9 @@ constexpr T move_towards(T value, T target, T rate) noexcept {
 #define ALLOC_FN(name) void* name(Allocator *a, u64 n)
 #define FREE_FN(name) void name(Allocator *a, void *p)
 
-typedef void* (*alloc_fn)(struct Allocator *a, u64 n);
-typedef void (*free_fn)(struct Allocator *a, void *p);
+using alloc_fn = void* (*)(struct Allocator*, u64);
+using free_fn = void (*)(struct Allocator*, void*);
+
 
 struct Allocator {
 	Allocator *prev;
@@ -558,10 +559,10 @@ SCI_DEF u32 fnv1a(void const* input, u64 len);
 //						+-> returned pointer
 //
 
-typedef char* str;				// str
-typedef char* istr;				// interned string
-typedef char* cstr;				// char*
-typedef char const* rstr;		// char const*
+using str  = char*;       // str
+using istr = char*;       // interned string
+using cstr = char*;       // char*
+using rstr = char const*; // char const*
 
 struct _str {
 	Allocator *a;
