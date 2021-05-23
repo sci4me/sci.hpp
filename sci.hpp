@@ -467,7 +467,7 @@ struct _sci_new_wrapper{};
 inline void* operator new(size_t, _sci_new_wrapper, void* ptr) { return ptr; }
 inline void operator delete(void*, _sci_new_wrapper, void*) {}
 #define pnew(t, p, ...) (new(_sci_new_wrapper(), p) t(__VA_ARGS__))
-#define xanew(t, a, ...) pnew(xalloc(sizeof(t), a)), __VA_ARGS__)
+#define xanew(t, a, ...) pnew(t, xalloc(sizeof(t), a), __VA_ARGS__)
 #define xnew(t, ...) xanew(t, allocator, __VA_ARGS__)
 
 
@@ -1252,8 +1252,8 @@ u32 murmur3(void const *input, s32 len, u32 seed) {
 	u8 const *tail = (u8 const*) (data + n_blocks * 4);
 	u32 k = 0;
 	switch(len & 3) {
-		case 3: k ^= tail[2] << 16;
-		case 2: k ^= tail[1] << 8;
+		case 3: k ^= tail[2] << 16; [[fallthrough]];
+		case 2: k ^= tail[1] << 8;  [[fallthrough]];
 		case 1: k ^= tail[0];
 				k *= C1;
 				k = rotl(k, 15);
