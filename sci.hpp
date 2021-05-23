@@ -58,6 +58,7 @@
 //			  CPU registers/SIMD *shrugs*
 // TODO: Add a JSON parser/printer and "object model", as it were.
 // TODO: Make xnew/xanew support arrays
+// TODO: Add intrinsics wrappers
 
 
 
@@ -167,6 +168,7 @@ static_assert(sizeof(f64) == 8);
 
 #define array_length(a) ((sizeof(a))/(sizeof(a[0])))
 #define cast(t, v) ((t)(v))
+#define unused(x) ((void)x)
 
 
 #ifndef NULL
@@ -280,7 +282,7 @@ DEFROT(u64)
 // NOTE: And despite the NOTE above about the rotl/rotr functions,
 // so far, is_pow2 has caused to trouble. WTF C++? Either work or don't!
 template<typename T>
-constexpr bool is_pow2(T x) noexcept { return x > 0 && (x & (x - 1) == 0); }
+constexpr bool is_pow2(T x) noexcept { return x > 0 && (x & (x - 1)) == 0; }
 
 constexpr u8 next_pow2(u8 y) noexcept {
 	u8 x = y;
@@ -834,9 +836,7 @@ struct Hash_Table {
 
 	// TODO: make this a lazy-init structure
 	void init(u32 size = HASH_TABLE_DEFAULT_SIZE) {
-		assert(size);
-		assert((size & (size - 1)) == 0);
-
+		assert(is_pow2(size));
 		this->count = 0;
 		this->size = size;
 		this->mask = size - 1;
