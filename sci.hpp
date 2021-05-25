@@ -622,11 +622,60 @@ SCI_DEF bool write_entire_file(str path, str data);
 
 template<typename T, u64 capacity>
 struct Static_Array {
+    struct Iterator {
+        Iterator() : a(NULL) {}
+        Iterator(Static_Array<T, capacity> *_a, u64 _index) : a(_a), index(_index) {}
+
+        Iterator& operator++() { index++; return *this; }
+        Iterator operator++(int) { auto it = *this; operator++(); return it; }
+        Iterator& operator--() { index--; return *this; }
+        Iterator operator--(int) { auto it = *this; operator--(); return it; }
+
+        T& operator*() { return (*a)[index]; }
+
+        bool operator==(Iterator const& b) const {
+            if(a != b.a) return false;
+            return index == b.index;
+        }
+
+        bool operator!=(Iterator const& b) const { return !(*this == b ); }
+    private:
+        Static_Array<T, capacity> *a;
+        u64 index = 0;
+    };
+
+    struct Const_Iterator {
+        Const_Iterator() : a(NULL) {}
+        Const_Iterator(Static_Array<T, capacity> const* _a, u64 _index) : a(_a), index(_index) {}
+
+        Const_Iterator& operator++() { index++; return *this; }
+        Const_Iterator operator++(int) { auto it = *this; operator++(); return it; }
+        Const_Iterator& operator--() { index--; return *this; }
+        Const_Iterator operator--(int) { auto it = *this; operator--(); return it; }
+
+        T const& operator*() { return (*a)[index]; }
+
+        bool operator==(Const_Iterator const& b) const {
+            if(a != b.a) return false;
+            return index == b.index;
+        }
+
+        bool operator!=(Const_Iterator const& b) const { return !(*this == b ); }
+    private:
+        Static_Array<T, capacity> const* a;
+        u64 index = 0;
+    };
+
 	static constexpr u64 size = capacity;
 	using type = T;
 
 	T data[capacity];
 	u64 count = 0;
+
+    Iterator begin() { return Iterator(this, 0); }
+    Iterator end() { return Iterator(this, count); }
+    Const_Iterator begin() const { return Const_Iterator(this, 0); }
+    Const_Iterator end() const { return Const_Iterator(this, count); }
 
 	void clear() {
 		count = 0;
@@ -657,12 +706,61 @@ constexpr u64 ARRAY_DEFAULT_SIZE = 16;
 
 template<typename T>
 struct Array {
+    struct Iterator {
+        Iterator() : a(NULL) {}
+        Iterator(Array<T> *_a, u64 _index) : a(_a), index(_index) {}
+
+        Iterator& operator++() { index++; return *this; }
+        Iterator operator++(int) { auto it = *this; operator++(); return it; }
+        Iterator& operator--() { index--; return *this; }
+        Iterator operator--(int) { auto it = *this; operator--(); return it; }
+
+        T& operator*() { return (*a)[index]; }
+
+        bool operator==(Iterator const& b) const {
+            if(a != b.a) return false;
+            return index == b.index;
+        }
+
+        bool operator!=(Iterator const& b) const { return !(*this == b ); }
+    private:
+        Array<T> *a;
+        u64 index = 0;
+    };
+
+    struct Const_Iterator {
+        Const_Iterator() : a(NULL) {}
+        Const_Iterator(Array<T> const* _a, u64 _index) : a(_a), index(_index) {}
+
+        Const_Iterator& operator++() { index++; return *this; }
+        Const_Iterator operator++(int) { auto it = *this; operator++(); return it; }
+        Const_Iterator& operator--() { index--; return *this; }
+        Const_Iterator operator--(int) { auto it = *this; operator--(); return it; }
+
+        T const& operator*() { return (*a)[index]; }
+
+        bool operator==(Const_Iterator const& b) const {
+            if(a != b.a) return false;
+            return index == b.index;
+        }
+
+        bool operator!=(Const_Iterator const& b) const { return !(*this == b ); }
+    private:
+        Array<T> const* a;
+        u64 index = 0;
+    };
+
 	u64 count = 0;
 	u64 size = 0;
 	T *data = NULL;
 	Allocator *a;
 
 	Array(Allocator *_a = ::allocator) : a(_a) {}
+
+    Iterator begin() { return Iterator(this, 0); }
+    Iterator end() { return Iterator(this, count); }
+    Const_Iterator begin() const { return Const_Iterator(this, 0); }
+    Const_Iterator end() const { return Const_Iterator(this, count); }
 
 	void free() {
 		if(data) {
@@ -767,12 +865,6 @@ private:
 		}
 	}
 };
-
-
-// TODO: Replace this and make it nice; probably can't use the for
-// keyword though because I'm guessing it requires std::* ??
-// But hey, maybe not. I'll check. Someday TM.
-#define FOREACH(a, it) for(u64 it = 0; it < a.count; it++)
 
 
 ////////////////////////
