@@ -112,7 +112,7 @@
 #elif defined(__EMSCRIPTEN__)
 #error "Emscripten not supported!"
 #elif defined(__MINGW32__) || defined(__MINGW64__)
-#error "MinGW not yet supported!"
+//#error "MinGW not yet supported!"
 #else
 #error "Unknown compiler!"
 #endif
@@ -125,7 +125,7 @@
 #elif defined(__APPLE__) && defined(__MACH__)
 #define SCI_OS_OSX
 #else
-#error "Unknown operating system!"
+#warning "Unknown operating system!"
 #endif
 
 
