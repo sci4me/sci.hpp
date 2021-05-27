@@ -20,10 +20,10 @@
 //       headers? would be nice..
 // TODO: Improve/Expand Allocators
 //		  - realloc?
+//        - alignment
 // TODO: Add more string functions
 //		  - strview -- I no longer recall what this was meant to do lol
 // TODO: Add (more) file I/O
-// TODO: Add high-water mark to Temporary_Storage
 // TODO: Add fallback allocation with logging 
 //		 (optional) to Temporary_Storage
 // TODO: Add tmark and treset to Temporary_Storage?
@@ -519,6 +519,7 @@ struct Arena {
 	};
 
 	Block *current_block = NULL;
+    Block *free_list = NULL;
 	u64 blocks = 0;
 	u64 used = 0;
 	u64 block_size;
@@ -529,7 +530,7 @@ struct Arena {
 SCI_DEF Arena* arena_new(u64 block_size = ARENA_DEFAULT_BLOCK_SIZE);
 SCI_DEF void arena_free(Arena *a);
 SCI_DEF void* arena_alloc(Arena *a, u64 n);
-SCI_DEF void arena_reset(Arena *a);
+SCI_DEF void arena_reset(Arena *a, bool release_blocks = false);
 
 SCI_DEF ALLOC_FN(arena_alloc);
 SCI_DEF FREE_FN(arena_free);
@@ -1108,6 +1109,7 @@ bool cstr_eq_fn(cstr const& a, cstr const& b) {
 #ifdef SCI_TESTING
 
 #ifndef SCI_SECTIONS
+// TODO: Probably don't require this since it depends on a GCC extension...
 #error "SCI_TESTING requires SCI_SECTIONS"
 #endif
 
@@ -1181,6 +1183,7 @@ Allocator sys_allocator = {
 	_free
 };
 
+// TODO: This should probably be thread-local
 Allocator *allocator = &sys_allocator;
 
 
@@ -1259,7 +1262,8 @@ Arena* arena_new(u64 block_size) {
 	allocator->prev = NULL;
 	allocator->alloc = arena_alloc;
 	allocator->free = arena_free;
-	arena->current_block = NULL;
+    arena->current_block = NULL;
+	arena->free_list = NULL;
 	arena->blocks = 0;
 	arena->used = 0;
 	arena->block_size = block_size;
@@ -1273,7 +1277,7 @@ void arena_free(Arena *a) {
 		xfree(blk);
 		blk = next;
 	}
-	xfree(cast(Allocator*, (u8*)a - sizeof(Allocator)));
+	xfree(cast(Allocator*, cast(u8*, a) - sizeof(Allocator)));
 }
 
 FREE_FN(arena_free) {
@@ -1288,10 +1292,15 @@ ALLOC_FN(arena_alloc) {
 	// TODO: align
 	auto blk = arena->current_block;
 	if((!blk) || (blk->used + n > arena->block_size)) {
-		auto blkmem = cast(Arena::Block*, xalloc(sizeof(Arena::Block) + arena->block_size));
-		blk = pnew(Arena::Block, blkmem, arena->current_block);
-		arena->current_block = blk;
-		arena->blocks++;
+        if(arena->free_list) {
+            blk = arena->free_list;
+            arena->free_list = arena->free_list->prev;
+        } else {
+		    auto blkmem = cast(Arena::Block*, xalloc(sizeof(Arena::Block) + arena->block_size));
+		    blk = pnew(Arena::Block, blkmem, arena->current_block);
+		    arena->current_block = blk;
+		    arena->blocks++;
+        }
 	}
 	assert(blk->used + n <= arena->block_size);
 
@@ -1302,13 +1311,16 @@ ALLOC_FN(arena_alloc) {
 	return p;
 }
 
-void arena_reset(Arena *a) {
+// TODO: Let's not free the blocks we allocated here!
+// Or if we do, make it optional via a flag or something.
+void arena_reset(Arena *a, bool release_blocks) {
 	auto blk = a->current_block;
 	while(blk) {
 		auto next = blk->prev;
-		xfree(blk);
+		if(release_blocks) xfree(blk);
 		blk = next;
 	}
+    a->free_list = release_blocks ? NULL : a->current_block;
 	a->current_block = NULL;
 	a->blocks = 0;
 	a->used = 0;
