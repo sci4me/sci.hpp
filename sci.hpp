@@ -44,6 +44,22 @@
 //		 to detect things like leaks, double-frees, etc.
 // TODO: Add an option for Arena*s to use guard pages
 // TODO: Add binary read/write helpers
+//        - Actually, more than that:
+//           - "Stream" API (i.e. java.io.InputStream, etc.)
+//             But more betterer. Other than that, same idea.
+//           - Streams for file I/O, network I/O, compression,
+//             encoding?, encrypting?, counting?, writing to memory,
+//             so on and so forth...
+//           - ByteBuf
+//              - Should probably inplement the interfaces
+//                DataInput and DataOutput, or such.
+// TODO: Add an NBT-esque general-purpose binary data format.
+//        - I don't want to just copy NBT, first of all. More betterer.
+//          Would be nice if we could make API-side improvements...
+//          I don't know. I wanted to use tinyrefl to use attributes to
+//          generate serialization code from annotated structs, but tinyrefl
+//          is a piece of shit so. And I haven't felt like writing a lexer and
+//          making that work myself.. yet.
 // TODO: Add string builder
 //		  - maybe this uses the binary read/write thing?
 //		  - or maybe the binary read/write thing uses this?
@@ -58,7 +74,6 @@
 // TODO: Add a "Sparse Set" (the funky one w/ uninit memory)
 //		   - Also, "Sparse Map", because it's free to add ^
 // TODO: Maybe have some form of 32-bit support? :/
-// TODO: Add more filesystem helper stuff?
 // TODO: Make sure this stuff works on winderps..... :/
 // TODO: Add bignum structs
 //		  - BigInt
@@ -70,6 +85,9 @@
 // TODO: Add a JSON parser/printer and "object model", as it were.
 // TODO: Make xnew/xanew support arrays
 // TODO: Add intrinsics wrappers
+// TODO: Add SIMD wrappers
+//        - Probably largely based on structs with overloaded operators...
+//          i.e. u32x4 or w/e
 // TODO: Add various linked list structs
 //        - intrusive
 //        - non-intrusive? (is this even useful?)
@@ -1008,6 +1026,7 @@ struct Hash_Table {
 	void resize(u32 new_size) {
 		assert(new_size);
 		new_size = next_pow2(new_size);
+        assert(is_pow2(new_size));
 
 		u32 old_count = count;
 		u32 old_size = size;
