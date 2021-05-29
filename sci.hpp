@@ -442,13 +442,6 @@ constexpr T move_towards(T value, T target, T rate) noexcept {
 //////////////////////
 
 
-#define ALLOC_FN(name) void* name(Allocator *a, u64 n)
-#define FREE_FN(name) void name(Allocator *a, void *p)
-
-using alloc_fn = void* (*)(struct Allocator*, u64);
-using free_fn = void (*)(struct Allocator*, void*);
-
-
 struct Allocator {
 	Allocator *prev;
 
@@ -500,8 +493,6 @@ struct Temporary_Storage : public Allocator {
 SCI_DEF Allocator *temp_allocator;
 SCI_DEF Temporary_Storage temporary_storage;
 
-SCI_DEF ALLOC_FN(temp_alloc);
-SCI_DEF FREE_FN(temp_free);
 SCI_DEF void* talloc(u64 n);
 SCI_DEF void treset();
 
@@ -519,7 +510,7 @@ SCI_DEF void treset();
 #define ARENA_MINIMUM_BLOCK_SIZE KIBIBYTE
 #endif
 
-struct Arena {
+struct Arena : public Allocator {
 	struct Block {
 		struct Block *prev;
 		u64 used = 0;
@@ -541,9 +532,6 @@ SCI_DEF Arena* arena_new(u64 block_size = ARENA_DEFAULT_BLOCK_SIZE);
 SCI_DEF void arena_free(Arena *a);
 SCI_DEF void* arena_alloc(Arena *a, u64 n);
 SCI_DEF void arena_reset(Arena *a, bool release_blocks = false);
-
-SCI_DEF ALLOC_FN(arena_alloc);
-SCI_DEF FREE_FN(arena_free);
 
 
 /////////////////////
