@@ -19,13 +19,24 @@
 // TODO: Maybe less dependence on standard 
 //       headers? would be nice..
 // TODO: Improve/Expand Allocators
-//		  - realloc?
+//		  - realloc? it's quite unclear to me if realloc is really
+//          worth it over freeing and allocating anew; maybe?
+//          seems better to just allocate smarter lol (i.e. less frequently)
 //        - alignment
 // TODO: Add more string functions
 //		  - strview -- I no longer recall what this was meant to do lol
+//        - Actually, maybe upgrade str and friends...?
+//           - Not sure what exactly I mean here lol; C++-ify slightly? *shrugs*
 // TODO: Add (more) file I/O
+//        - Actually a full virtual filesystem API would be nice
 // TODO: Add fallback allocation with logging 
 //		 (optional) to Temporary_Storage
+// TODO: Add a simple logging API
+//        - Just the basics: printf but to a "Log" which
+//          can output to any combination of the console
+//          and files on disk. Maybe we have other
+//          options for output as well (i.e. a common interface)
+//        - File rotation, ofc
 // TODO: Add tmark and treset to Temporary_Storage?
 // TODO: Add a debug memory allocator that can be used
 // 		 as a wrapper around any Allocator* that provides
@@ -59,6 +70,10 @@
 // TODO: Add a JSON parser/printer and "object model", as it were.
 // TODO: Make xnew/xanew support arrays
 // TODO: Add intrinsics wrappers
+// TODO: Add various linked list structs
+//        - intrusive
+//        - non-intrusive? (is this even useful?)
+//        - include iterators, etc.
 
 
 
@@ -443,8 +458,10 @@ constexpr T move_towards(T value, T target, T rate) noexcept {
 
 
 struct Allocator {
-	Allocator *prev;
+	Allocator *parent;
 
+    Allocator(Allocator *_parent = NULL) : parent(_parent) {}
+    virtual void deinit() {}
     virtual void* alloc(u64 n) = 0;
     virtual void free(void *p) = 0;
 };
@@ -506,6 +523,10 @@ SCI_DEF void treset();
 #define ARENA_DEFAULT_BLOCK_SIZE KIBIBYTES(64)
 #endif
 
+#ifndef ARENA_DEFAULT_PREALLOC_BLOCKS
+#define ARENA_DEFAULT_PREALLOC_BLOCKS 1
+#endif
+
 #ifndef ARENA_MINIMUM_BLOCK_SIZE
 #define ARENA_MINIMUM_BLOCK_SIZE KIBIBYTE
 #endif
@@ -521,18 +542,63 @@ struct Arena : public Allocator {
 
 	Block *current_block = NULL;
     Block *free_list = NULL;
-	u64 blocks = 0;
-	u64 used = 0;
 	u64 block_size;
 
-	Arena(u64 _block_size = ARENA_DEFAULT_BLOCK_SIZE) : block_size(_block_size) {}
+	Arena(Allocator *parent = allocator, u64 _block_size = ARENA_DEFAULT_BLOCK_SIZE, u32 prealloc_blocks = ARENA_DEFAULT_PREALLOC_BLOCKS) : Allocator(parent), block_size(_block_size) {
+        for(u32 i = 0; i < prealloc_blocks; i++) {
+            free_list = pnew(Block, xalloc(sizeof(Block) + block_size, parent), free_list);
+        }
+    }
+
+    void deinit() override {
+        auto b = current_block;
+        while(b) {
+            auto t = b->prev;
+            xfree(b, parent);
+            b = t;
+        }
+        b = free_list;
+        while(b) {
+            auto t = b->prev;
+            xfree(b, parent);
+            b = t;
+        }
+        Allocator::deinit();
+    }
+
+    void* alloc(u64 n) override {
+        Block *blk = NULL;
+
+        if(!blk || blk->used + n >= block_size) {
+            if(free_list) {
+                blk = free_list;
+                free_list = blk->prev;
+            } else {
+                blk = pnew(Block, xalloc(sizeof(Block) + block_size, parent), NULL);
+            }
+        }
+
+        assert(blk->used + n < block_size);
+
+        auto p = blk->base + blk->used;
+        blk->used += n;
+        return p;
+    }
+
+    void free(void *p) override {}
+
+    void clear() {
+        auto b = current_block;
+        while(b) {
+            auto n = b->prev;
+            b->prev = free_list;
+            b->used = 0;
+            free_list = b;
+            b = n;
+        }
+        current_block = NULL;
+    }
 };
-
-SCI_DEF Arena* arena_new(u64 block_size = ARENA_DEFAULT_BLOCK_SIZE);
-SCI_DEF void arena_free(Arena *a);
-SCI_DEF void* arena_alloc(Arena *a, u64 n);
-SCI_DEF void arena_reset(Arena *a, bool release_blocks = false);
-
 
 /////////////////////
 ///    Hashing    ///
@@ -1183,13 +1249,11 @@ Allocator *allocator = &sys_allocator;
 
 
 void push_allocator(Allocator *a) {
-	a->prev = allocator;
-	allocator = a;
+    todo();
 }
 
 void pop_allocator() {
-	assert(allocator->prev);
-	allocator = allocator->prev;
+    todo();
 }
 
 void* xalloc(u64 n, Allocator *a) {
