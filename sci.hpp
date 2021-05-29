@@ -451,9 +451,9 @@ using free_fn = void (*)(struct Allocator*, void*);
 
 struct Allocator {
 	Allocator *prev;
-	alloc_fn alloc;
-	free_fn free;
-	u8 data[];
+
+    virtual void* alloc(u64 n) = 0;
+    virtual void free(void *p) = 0;
 };
 
 SCI_DEF Allocator *allocator;
@@ -481,14 +481,24 @@ inline void operator delete(void*, _sci_new_wrapper, void*) {}
 #define TEMPORARY_STORAGE_SIZE KIBIBYTES(64)
 #endif
 
-struct Temporary_Storage {
+struct Temporary_Storage : public Allocator {
 	u64 used;
     u64 high_water_mark;
-	u8 data[];
+    u8 data[TEMPORARY_STORAGE_SIZE];
+
+    void* alloc(u64 n) override {
+        assert(used + n < TEMPORARY_STORAGE_SIZE);
+        void *p = &data[used];
+        used += n;
+        if(used > high_water_mark) high_water_mark = used;
+        return p;
+    }
+
+    void free(void *p) override {}
 };
 
 SCI_DEF Allocator *temp_allocator;
-SCI_DEF Temporary_Storage *temporary_storage;
+SCI_DEF Temporary_Storage temporary_storage;
 
 SCI_DEF ALLOC_FN(temp_alloc);
 SCI_DEF FREE_FN(temp_free);
@@ -1167,23 +1177,20 @@ SCI_DEF s32 run_tests();
 ///////////////////////
 
 
-ALLOC_FN(_alloc) {
-	void *p = malloc(n);
-	memset(p, 0, n);
-	return p;
-}
+struct Sys_Allocator : public Allocator {
+    void* alloc(u64 n) override {
+        void *p = malloc(n);
+        memset(p, 0, n);
+        return p;
+    }
 
-FREE_FN(_free) {
-	free(p);
-}
-
-Allocator sys_allocator = {
-	NULL,
-	_alloc,
-	_free
+    void free(void *p) override {
+        ::free(p);
+    }
 };
 
-// TODO: This should probably be thread-local
+
+Sys_Allocator sys_allocator;
 Allocator *allocator = &sys_allocator;
 
 
@@ -1199,12 +1206,12 @@ void pop_allocator() {
 
 void* xalloc(u64 n, Allocator *a) {
 	auto a2 = a ? a : allocator;
-	return a2->alloc(a2, n);
+	return a2->alloc(n);
 }
 
 void xfree(void *p, Allocator *a) {
 	auto a2 = a ? a : allocator;
-	a2->free(a2, p);
+	a2->free(p);
 }
 
 
@@ -1214,116 +1221,20 @@ void xfree(void *p, Allocator *a) {
 
 
 Allocator *temp_allocator;
-Temporary_Storage *temporary_storage;
+Temporary_Storage temporary_storage;
 
 static_init void temp_alloc_init() {
-	temp_allocator = cast(Allocator*, xalloc(sizeof(Allocator) + sizeof(Temporary_Storage) + TEMPORARY_STORAGE_SIZE));
-	temp_allocator->prev = NULL;
-	temp_allocator->alloc = temp_alloc;
-	temp_allocator->free = temp_free;
-	temporary_storage = cast(Temporary_Storage*, (temp_allocator + sizeof(Allocator)));
-	temporary_storage->used = 0;
-    temporary_storage->high_water_mark = 0;
+    memset(&temporary_storage, 0, sizeof(Temporary_Storage));
+    temp_allocator = &temporary_storage;
 }
 
-static_deinit void temp_alloc_deinit() {
-	xfree(temp_allocator);
-}
-
-ALLOC_FN(temp_alloc) {
-	auto& ts = temporary_storage;
-	assert(ts->used + n < TEMPORARY_STORAGE_SIZE);
-	void *p = &ts->data[ts->used];
-	ts->used += n; // TODO: align
-    if(ts->used > ts->high_water_mark) ts->high_water_mark = ts->used;
-	return p;
-}
-
-FREE_FN(temp_free) {
-}
 
 void* talloc(u64 n) {
-	return temp_allocator->alloc(temp_allocator, n);
+	return temporary_storage.alloc(n);
 }
 
 void treset() {
-	temporary_storage->used = 0;
-}
-
-
-///////////////////
-///    Arena    ///
-///////////////////
-
-
-Arena* arena_new(u64 block_size) {
-	auto allocator = cast(Allocator*, xalloc(sizeof(Allocator) + sizeof(Arena)));
-	auto arena = pnew(Arena, allocator->data, block_size);
-	allocator->prev = NULL;
-	allocator->alloc = arena_alloc;
-	allocator->free = arena_free;
-    arena->current_block = NULL;
-	arena->free_list = NULL;
-	arena->blocks = 0;
-	arena->used = 0;
-	arena->block_size = block_size;
-	return arena;
-}
-
-void arena_free(Arena *a) {
-	auto blk = a->current_block;
-	while(blk) {
-		auto next = blk->prev;
-		xfree(blk);
-		blk = next;
-	}
-	xfree(cast(Allocator*, cast(u8*, a) - sizeof(Allocator)));
-}
-
-FREE_FN(arena_free) {
-	todo();
-}
-
-ALLOC_FN(arena_alloc) {
-	assert(a);
-	auto arena = cast(Arena*, a->data);
-	assert(arena);
-
-	// TODO: align
-	auto blk = arena->current_block;
-	if((!blk) || (blk->used + n > arena->block_size)) {
-        if(arena->free_list) {
-            blk = arena->free_list;
-            arena->free_list = arena->free_list->prev;
-        } else {
-		    auto blkmem = cast(Arena::Block*, xalloc(sizeof(Arena::Block) + arena->block_size));
-		    blk = pnew(Arena::Block, blkmem, arena->current_block);
-		    arena->current_block = blk;
-		    arena->blocks++;
-        }
-	}
-	assert(blk->used + n <= arena->block_size);
-
-	auto p = blk->base + blk->used;
-	blk->used += n;
-	arena->used += n;
-
-	return p;
-}
-
-// TODO: Let's not free the blocks we allocated here!
-// Or if we do, make it optional via a flag or something.
-void arena_reset(Arena *a, bool release_blocks) {
-	auto blk = a->current_block;
-	while(blk) {
-		auto next = blk->prev;
-		if(release_blocks) xfree(blk);
-		blk = next;
-	}
-    a->free_list = release_blocks ? NULL : a->current_block;
-	a->current_block = NULL;
-	a->blocks = 0;
-	a->used = 0;
+	temporary_storage.used = 0;
 }
 
 
@@ -1409,7 +1320,7 @@ str mkstr(cstr s, Allocator *a) {
 
 void freestr(str s) {
 	auto s2 = strhdr(s);
-	s2->a->free(s2->a, s2);
+	s2->a->free(s2);
 }
 
 u64 strsz(str s) {
@@ -1419,7 +1330,7 @@ u64 strsz(str s) {
 str strcopy(str s, Allocator *a) {
 	auto s2 = strhdr(s);
 	auto a2 = a ? a : s2->a;
-	_str *r = cast(_str*, a2->alloc(a2, sizeof(_str) + s2->size + 1));
+	_str *r = cast(_str*, a2->alloc(sizeof(_str) + s2->size + 1));
 	r->a = a2;
 	r->size = s2->size;
 	memcpy(r->data, s2->data, r->size + 1);
