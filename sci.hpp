@@ -43,16 +43,6 @@
 //		 some behind-the-scenes bookkeeping in order
 //		 to detect things like leaks, double-frees, etc.
 // TODO: Add an option for Arena*s to use guard pages
-// TODO: Add binary read/write helpers
-//        - Actually, more than that:
-//           - "Stream" API (i.e. java.io.InputStream, etc.)
-//             But more betterer. Other than that, same idea.
-//           - Streams for file I/O, network I/O, compression,
-//             encoding?, encrypting?, counting?, writing to memory,
-//             so on and so forth...
-//           - ByteBuf
-//              - Should probably inplement the interfaces
-//                DataInput and DataOutput, or such.
 // TODO: Add an NBT-esque general-purpose binary data format.
 //        - I don't want to just copy NBT, first of all. More betterer.
 //          Would be nice if we could make API-side improvements...
@@ -1182,6 +1172,262 @@ u32 cstr_hash_fn(cstr const& s) {
 bool cstr_eq_fn(cstr const& a, cstr const& b) {
     return strcmp(a, b) == 0;
 }
+
+
+/////////////////////////
+///    I/O Streams    ///
+/////////////////////////
+
+
+struct DataInput {
+    virtual u8 read_u8() = 0;
+
+    inline u16 read_u16() {
+        return (cast(u16, read_u8()) << 8) | 
+                cast(u16, read_u8());
+    }
+
+    inline u32 read_u32() {
+        return (cast(u32, read_u8()) << 24) |
+               (cast(u32, read_u8()) << 16) |
+               (cast(u32, read_u8()) << 8) |
+                read_u8();
+    }
+
+    inline u64 read_u64() {
+        return (cast(u64, read_u8()) << 56) |
+               (cast(u64, read_u8()) << 48) |
+               (cast(u64, read_u8()) << 40) |
+               (cast(u64, read_u8()) << 32) |
+               (cast(u64, read_u8()) << 24) |
+               (cast(u64, read_u8()) << 16) |
+               (cast(u64, read_u8()) << 8) |
+                cast(u64, read_u8());
+    }
+
+    inline s8 read_s8() { return cast(s8, read_u8()); }
+    inline s16 read_s16() { return cast(s16, read_u16()); }
+    inline s32 read_s32() { return cast(s32, read_u32()); }
+    inline s64 read_s64() { return cast(s64, read_u64()); }
+
+    inline f32 read_f32() {
+        union {
+            u32 u;
+            f32 f;
+        };
+        u = read_u32();
+        return f;
+    }
+
+    inline f64 read_f64() {
+        union {
+            u64 u;
+            f64 f;
+        };
+        u = read_u64();
+        return f;
+    }
+
+    inline str read_str() {
+        u64 len = read_u64();
+        str s = mkstr(NULL, len, allocator);
+        for(u64 i = 0; i < len; i++) s[i] = read_u8();
+        return s;
+    }
+
+    inline cstr read_cstr() {
+        u64 len = read_u64();
+        cstr s = cast(cstr, xalloc(len + 1, allocator));
+        for(u64 i = 0; i < len; i++) s[i] = read_u8();
+        return s;
+    }
+};
+
+
+struct DataOutput {
+    virtual void write_u8(u8 x) = 0;
+
+    inline void write_u16(u16 x) {
+        write_u8((x >> 8) & 0xFF);
+        write_u8(x & 0xFF);
+    }
+
+    inline  void write_u32(u32 x) {
+        write_u8((x >> 24) & 0xFF);
+        write_u8((x >> 16) & 0xFF);
+        write_u8((x >> 8) & 0xFF);
+        write_u8(x & 0xFF);
+    }
+
+    inline void write_u64(u64 x) {
+        write_u8((x >> 56) & 0xFF);
+        write_u8((x >> 48) & 0xFF);
+        write_u8((x >> 40) & 0xFF);
+        write_u8((x >> 32) & 0xFF);
+        write_u8((x >> 24) & 0xFF);
+        write_u8((x >> 16) & 0xFF);
+        write_u8((x >> 8) & 0xFF);
+        write_u8(x & 0xFF);
+    }
+
+    inline void write_s8(s8 x) { write_u8(cast(u8, x)); }
+    inline void write_s16(s16 x) { write_u16(cast(u16, x)); }
+    inline void write_s32(s32 x) { write_u32(cast(u32, x)); }
+    inline void write_s64(s64 x) { write_u64(cast(u64, x)); }
+
+    inline void write_f32(f32 x) {
+        union {
+            f32 f;
+            u32 u;
+        };
+        f = x;
+        write_u32(u);
+    }
+
+    inline void write_f64(f64 x) {
+        union {
+            f64 f;
+            u64 u;
+        };
+        f = x;
+        write_u64(u); 
+    }
+
+    inline void write_str(str s) {
+        u64 len = strsz(s);
+        write_u64(len);
+        for(u64 i = 0; i < len; i++) write_u8(s[i]);
+    }
+
+    inline void write_cstr(cstr s) {
+        u64 len = strlen(s);
+        write_u64(len);
+        for(u64 i = 0; i < len; i++) write_u8(s[i]);
+    }
+};
+
+struct RandomAccessDataOutput {
+    virtual u64 reserve(u64 n) = 0;
+    virtual void set_u8(u64 i, u8 x) = 0;
+
+    inline void set_u16(u64 i, u16 x) {
+        set_u8(i, (x >> 8) & 0xFF);
+        set_u8(i + 1, x & 0xFF);
+    }
+
+    inline void set_u32(u64 i, u32 x) {
+        set_u8(i, (x >> 24) & 0xFF);
+        set_u8(i + 1, (x >> 16) & 0xFF);
+        set_u8(i + 2, (x >> 8) & 0xFF);
+        set_u8(i + 3, x & 0xFF);
+    }
+
+    inline void set_u64(u64 i, u64 x) {
+        set_u8(i, (x >> 56) & 0xFF);
+        set_u8(i + 1, (x >> 48) & 0xFF);
+        set_u8(i + 2, (x >> 40) & 0xFF);
+        set_u8(i + 3, (x >> 32) & 0xFF);
+        set_u8(i + 4, (x >> 24) & 0xFF);
+        set_u8(i + 5, (x >> 16) & 0xFF);
+        set_u8(i + 6, (x >> 8) & 0xFF);
+        set_u8(i + 7, x & 0xFF);
+    }
+
+    inline void set_s8(u64 i, s8 x) { set_u8(i, cast(u8, x)); }
+    inline void set_s16(u64 i, s16 x) { set_u16(i, cast(u16, x)); }
+    inline void set_s32(u64 i, s32 x) { set_u32(i, cast(u32, x)); }
+    inline void set_s64(u64 i, s64 x) { set_u64(i, cast(u64, x)); }
+};
+
+
+struct ByteBuf : public DataInput, public DataOutput, public RandomAccessDataOutput {
+    static ByteBuf wrap(str s) { return ByteBuf(cast(u8*, s), 0, strsz(s)); }
+    static ByteBuf wrap(u8 *p, u64 n) { return ByteBuf(p, 0, n); }
+
+    u8 *data = NULL;
+    u64 index = 0;
+    u64 size = 4096;
+
+    ByteBuf() {}
+    ByteBuf(u64 _size) : size(_size) {}
+    ByteBuf(u8 *_data, u64 _index, u64 _size) : data(_data), index(_index), size(_size) {}
+
+    void deinit() {
+        xfree(data);
+    }
+
+    void write_to_file(cstr path) {
+        FILE *fh = fopen(path, "w");
+        assert(fwrite(data, sizeof(char), index, fh) == index);
+        fflush(fh);
+        fclose(fh);
+    }
+
+    bool read_from_file(cstr path) {
+        FILE *fh = fopen(path, "r");
+        if(!fh) return false;
+
+        fseek(fh, 0L, SEEK_END);
+	    u64 size = ftell(fh);
+	    rewind(fh);
+
+        data = cast(u8*, xalloc(size));
+    	assert(fread(data, sizeof(char), size, fh) == size);
+
+        fclose(fh);
+
+        return true;
+    }
+
+    str tostr() {
+        auto s = mkstr(NULL, index);
+        memcpy(s, data, index);
+        return s;
+    }
+
+    void reset() {
+        index = 0;
+    }
+
+    void expand() {
+        if(data) {
+            u64 new_size = size * 2;
+            u8 *new_data = cast(u8*, xalloc(new_size));
+            memcpy(new_data, data, size);
+            xfree(data);
+            data = new_data;
+            size = new_size;
+        } else {
+            assert(size);
+            data = cast(u8*, xalloc(size));
+        }
+    }
+
+    u8 read_u8() override {
+        return data[index++];
+    }
+
+    void write_u8(u8 x) override {
+        if(index >= size || data == NULL) {
+            expand();
+        }
+    
+        data[index++] = x;
+    }
+
+    u64 reserve(u64 n) override {
+        if(index + n >= size || data == NULL) {
+            expand();
+        }
+        u64 i = index;
+        index += n;
+        return i;
+    }
+
+    void set_u8(u64 i, u8 x) override {
+        data[i] = x;
+    }
+};
 
 
 /////////////////////
