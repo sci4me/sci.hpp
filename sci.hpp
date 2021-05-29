@@ -485,6 +485,8 @@ SCI_DEF void xfree(void *p, Allocator *a = NULL);
 struct _sci_new_wrapper{};
 inline void* operator new(size_t, _sci_new_wrapper, void* ptr) { return ptr; }
 inline void operator delete(void*, _sci_new_wrapper, void*) {}
+inline void* operator new[](size_t, _sci_new_wrapper, void *ptr) { return ptr; }
+inline void operator delete[](void*, _sci_new_wrapper, void*) {}
 #define pnew(t, p, ...) (new(_sci_new_wrapper(), p) t(__VA_ARGS__))
 #define xanew(t, a, ...) pnew(t, xalloc(sizeof(t), a), __VA_ARGS__)
 #define xnew(t, ...) xanew(t, allocator, __VA_ARGS__)
@@ -575,7 +577,7 @@ struct Arena : public Allocator {
     }
 
     void* alloc(u64 n) override {
-        Block *blk = NULL;
+        auto blk = current_block;
 
         if(!blk || blk->used + n >= block_size) {
             if(free_list) {
@@ -584,6 +586,7 @@ struct Arena : public Allocator {
             } else {
                 blk = pnew(Block, xalloc(sizeof(Block) + block_size, parent), NULL);
             }
+            current_block = blk;
         }
 
         assert(blk->used + n < block_size);
@@ -1341,7 +1344,7 @@ struct RandomAccessDataOutput {
 
 
 struct ByteBuf : public DataInput, public DataOutput, public RandomAccessDataOutput {
-    static ByteBuf wrap(str s) { return ByteBuf(cast(u8*, s), 0, strsz(s)); }
+    static ByteBuf wrap(cstr s) { return ByteBuf(cast(u8*, s), 0, strlen(s)); }
     static ByteBuf wrap(u8 *p, u64 n) { return ByteBuf(p, 0, n); }
 
     u8 *data = NULL;
