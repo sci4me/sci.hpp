@@ -59,11 +59,11 @@
 // TODO: Add intel hex encoder
 // 	 	  - Also SRec?
 // TODO: Add sorting functions for Array<T>, etc.
-// TODO: Add some logging stuff maybe?
 // TODO: Add a segment tree
 // TODO: Add a "Sparse Set" (the funky one w/ uninit memory)
-//		   - Also, "Sparse Map", because it's free to add ^
-// TODO: Maybe have some form of 32-bit support? :/
+//		  - Also, "Sparse Map", because it's free to add ^
+// TODO: Add a ring buffer type
+//        - Support both Static_Ring_Buffer and Ring_Buffer? or...
 // TODO: Make sure this stuff works on winderps..... :/
 // TODO: Add bignum structs
 //		  - BigInt
@@ -73,7 +73,6 @@
 //			- May be a thing that already exists for larger
 //			  CPU registers/SIMD *shrugs*
 // TODO: Add a JSON parser/printer and "object model", as it were.
-// TODO: Make xnew/xanew support arrays
 // TODO: Add intrinsics wrappers
 // TODO: Add SIMD wrappers
 //        - Probably largely based on structs with overloaded operators...
@@ -82,6 +81,10 @@
 //        - intrusive
 //        - non-intrusive? (is this even useful?)
 //        - include iterators, etc.
+// TODO: Add write/read varint to DataOutput/DataInput
+// TODO: Add an LRU cache type
+// TODO: Add a priority queue type
+// TODO: Add command-line argument parsing
 
 
 
@@ -460,6 +463,14 @@ constexpr T move_towards(T value, T target, T rate) noexcept {
 }
 
 
+//////////////////////
+///    OS Misc.    ///
+//////////////////////
+
+
+u64 get_page_size();
+
+
 ///////////////////////
 ///    Allocator    ///
 //////////////////////
@@ -698,57 +709,46 @@ SCI_DEF bool write_entire_file(str path, str data);
 
 template<typename T, u64 capacity>
 struct Static_Array {
-    struct Iterator {
-        Iterator() : a(NULL) {}
-        Iterator(Static_Array<T, capacity> *_a, u64 _index) : a(_a), index(_index) {}
+    static constexpr u64 size = capacity;
+    using value_type = T;
+	using type = Static_Array<T, capacity>;
+    using ref_type = type&;
+    using ref_const_type = type const&;
+    using ptr_type = type*;
+    using ptr_const_type = type const*;
 
-        Iterator& operator++() { index++; return *this; }
-        Iterator operator++(int) { auto it = *this; operator++(); return it; }
-        Iterator& operator--() { index--; return *this; }
-        Iterator operator--(int) { auto it = *this; operator--(); return it; }
+    template<typename AT>
+    struct IteratorBase {
+        using type = IteratorBase<AT>;
+
+        IteratorBase() : a(NULL) {}
+        IteratorBase(AT _a, u64 _index) : a(_a), index(_index) {}
+
+        type& operator++() { index++; return *this; }
+        type operator++(int) { auto it = *this; operator++(); return it; }
+        type& operator--() { index--; return *this; }
+        type operator--(int) { auto it = *this; operator--(); return it; }
 
         T& operator*() { return (*a)[index]; }
 
-        bool operator==(Iterator const& b) const {
+        bool operator==(type const& b) const {
             if(a != b.a) return false;
             return index == b.index;
         }
 
-        bool operator!=(Iterator const& b) const { return !(*this == b ); }
+        bool operator!=(type const& b) const { return !(*this == b ); }
     private:
-        Static_Array<T, capacity> *a;
+        AT a;
         u64 index = 0;
     };
 
-    struct Const_Iterator {
-        Const_Iterator() : a(NULL) {}
-        Const_Iterator(Static_Array<T, capacity> const* _a, u64 _index) : a(_a), index(_index) {}
-
-        Const_Iterator& operator++() { index++; return *this; }
-        Const_Iterator operator++(int) { auto it = *this; operator++(); return it; }
-        Const_Iterator& operator--() { index--; return *this; }
-        Const_Iterator operator--(int) { auto it = *this; operator--(); return it; }
-
-        T const& operator*() { return (*a)[index]; }
-
-        bool operator==(Const_Iterator const& b) const {
-            if(a != b.a) return false;
-            return index == b.index;
-        }
-
-        bool operator!=(Const_Iterator const& b) const { return !(*this == b ); }
-    private:
-        Static_Array<T, capacity> const* a;
-        u64 index = 0;
-    };
-
-	static constexpr u64 size = capacity;
-	using type = T;
+    using Iterator = IteratorBase<ptr_type>;
+    using Const_Iterator = IteratorBase<ptr_const_type>;
 
 	T data[capacity];
 	u64 count = 0;
 
-    Iterator begin() { return Iterator(this, 0); }
+    Iterator begin() { return Iterator (this, 0); }
     Iterator end() { return Iterator(this, count); }
     Const_Iterator begin() const { return Const_Iterator(this, 0); }
     Const_Iterator end() const { return Const_Iterator(this, count); }
@@ -773,12 +773,57 @@ struct Static_Array {
 };
 
 
+////////////////////////////
+///    Slot Allocator    ///
+////////////////////////////
+
+
+// NOTE: This is extremely similar to Static_Array
+// but, at the moment, I feel like keeping them separate
+// since they have different intended uses.
+//          - sci4me, 5/12/20
+
+template<typename T, u32 size>
+struct Slot_Allocator {
+    T slots[size];
+    s32 count;
+
+    Slot_Allocator() {
+        memset(slots, 0, sizeof(slots));
+        count = 0;
+    }
+
+    void clear() {
+        count = 0;
+    }
+
+    s32 index_of(T x) {
+        for(s32 i = 0; i < count; i++) {
+            if(slots[i] == x) return i;
+        }
+        return -1;
+    }
+
+    s32 alloc(T x) {      
+        s32 i = index_of(x);
+        if(i != -1) return i;
+
+        if(count == size) return -1;
+
+        slots[count] = x;
+        return count++;
+    }
+};
+
+
 ///////////////////
 ///    Array    ///
 ///////////////////
 
 
-constexpr u64 ARRAY_DEFAULT_SIZE = 16;
+#ifndef ARRAY_DEFAULT_SIZE
+#define ARRAY_DEFAULT_SIZE 64
+#endif
 
 template<typename T>
 struct Array {
@@ -961,6 +1006,12 @@ private:
 //				- sci4me, 5/21/20
 constexpr u32 HASH_TABLE_DEFAULT_SEED = 0xB23D66D5;
 
+template<typename K>
+using HashFN = u32 (*)(K const&); // TODO: Better name?
+
+template<typename K>
+using EqFN = bool (*)(K const&, K const&); // TODO: Better name?
+
 template<typename T>
 u32 default_hash_fn(T const& v) {
 	return murmur3((void const *) &v, sizeof(T), HASH_TABLE_DEFAULT_SEED);
@@ -972,9 +1023,16 @@ bool default_eq_fn(T const& a, T const& b) {
 }
 
 
-constexpr f32 HASH_TABLE_LOAD_FACTOR_SHRINK_THRESHOLD = 0.1f;
-constexpr f32 HASH_TABLE_LOAD_FACTOR_EXPAND_THRESHOLD = 0.7f;
-constexpr u32 HASH_TABLE_DEFAULT_SIZE = 16;
+#ifndef HASH_TABLE_LOAD_FACTOR_SHRINK_THRESHOLD
+#define HASH_TABLE_LOAD_FACTOR_SHRINK_THRESHOLD 0.1f
+#endif
+#ifndef HASH_TABLE_LOAD_FACTOR_EXPAND_THRESHOLD
+#define HASH_TABLE_LOAD_FACTOR_EXPAND_THRESHOLD 0.85f
+#endif
+#ifndef HASH_TABLE_DEFAULT_SIZE
+#define HASH_TABLE_DEFAULT_SIZE 256
+#endif
+
 
 // NOTE: Currently, we _require_ size to be a power of 2!
 // Eventually, we _should_ switch to using sizes that are
@@ -989,7 +1047,7 @@ constexpr u32 HASH_TABLE_DEFAULT_SIZE = 16;
 // " the variance of the keys distances from their "home" slots is minimized.  		"
 //				- sci4me, 11/23/20
 
-template<typename K, typename V, u32 (*hash_fn)(K const&) = default_hash_fn, bool (*eq_fn)(K const&, K const&) = default_eq_fn>
+template<typename K, typename V, HashFN<K> hash_fn = default_hash_fn, EqFN<K> eq_fn = default_eq_fn>
 struct Hash_Table {
 	struct Slot {
 		K key;
@@ -1020,6 +1078,7 @@ struct Hash_Table {
 		assert(new_size);
 		new_size = next_pow2(new_size);
         assert(is_pow2(new_size));
+        assert(new_size >= count);
 
 		u32 old_count = count;
 		u32 old_size = size;
@@ -1062,7 +1121,7 @@ struct Hash_Table {
 				return;
 			}
 
-			s32 epd = (i + size - (slots[i].hash & mask)) & mask;
+            s32 epd = probe_dist(i, slots[i].hash);
 			if(epd < dist) {
 				assert(slots[i].hash);
 
@@ -1105,7 +1164,9 @@ struct Hash_Table {
 				return -1;
 			}
 
-			s32 epd = (i + size - (hash & mask)) & mask;
+            // NOTE TODO: Are we supposed to be using `hash`?
+            // Or are we supposed to be using slots[i].hash?...
+            s32 epd = probe_dist(i, hash);
 			if(dist > epd) {
 				return -1;
 			}
@@ -1128,19 +1189,19 @@ struct Hash_Table {
 
 			if(slots[k].hash == 0) break;
 
-			s32 epd = (k + size - (slots[k].hash & mask)) & mask;
+            s32 epd = probe_dist(k, slots[k].hash);
 			if(epd == 0) break;
 
 			memcpy(&slots[i], &slots[k], sizeof(Slot));
 
-			i = (i + 1) & mask;
+			i = k;
 		}
 
 		slots[i].hash = 0;
 		count--;
 
 		if(load_factor() < HASH_TABLE_LOAD_FACTOR_SHRINK_THRESHOLD) {
-			resize(max(size / 2, HASH_TABLE_DEFAULT_SIZE));
+			resize(max(size / 2, u32(HASH_TABLE_DEFAULT_SIZE)));
 		}
 
 		return true;
@@ -1151,7 +1212,11 @@ struct Hash_Table {
 	}
 
 private:
-	u32 hash_key(K key) const {
+    s32 probe_dist(u32 hash, u32 slot_index) const noexcept {
+        return (slot_index + size - (hash & mask)) & mask;
+    }
+
+	static u32 hash_key(K key) {
 		u32 h = hash_fn(key);
 		// NOTE: a hash of 0 represents an empty slot
 		if(h == 0) h |= 1;
@@ -1343,15 +1408,19 @@ struct RandomAccessDataOutput {
 };
 
 
+#ifndef BYTEBUF_DEFAULT_SIZE
+#define BYTEBUF_DEFAULT_SIZE 4096
+#endif
+
 struct ByteBuf : public DataInput, public DataOutput, public RandomAccessDataOutput {
     static ByteBuf wrap(cstr s) { return ByteBuf(cast(u8*, s), 0, strlen(s)); }
     static ByteBuf wrap(u8 *p, u64 n) { return ByteBuf(p, 0, n); }
 
     u8 *data = NULL;
     u64 index = 0;
-    u64 size = 4096;
+    u64 size;
 
-    ByteBuf() {}
+    ByteBuf() : ByteBuf(BYTEBUF_DEFAULT_SIZE) {}
     ByteBuf(u64 _size) : size(_size) {}
     ByteBuf(u8 *_data, u64 _index, u64 _size) : data(_data), index(_index), size(_size) {}
 
@@ -1492,6 +1561,28 @@ SCI_DEF s32 run_tests();
 
 #if defined(SCI_IMPL) && !defined(SCI_IMPL_DONE)
 #define SCI_IMPL_DONE 
+
+
+//////////////////////
+///    OS Misc.    ///
+//////////////////////
+
+
+#ifdef SCI_OS_WINDOWS
+#define WIN32_LEAN_AND_MEAN
+#include "windows.h"
+#endif
+
+
+u64 get_page_size() {
+#ifdef SCI_OS_WINDOWS
+    SYSTEM_INFO info;
+    GetSystemInfo(&info);
+    return cast(u64, info.dwPageSize);
+#else
+    return sysconf(_SC_PAGESIZE);
+#endif
+}
 
 
 ///////////////////////
