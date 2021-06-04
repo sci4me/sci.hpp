@@ -468,7 +468,7 @@ constexpr T move_towards(T value, T target, T rate) noexcept {
 //////////////////////
 
 
-u64 get_page_size();
+SCI_DEF u64 get_page_size();
 
 
 ///////////////////////
@@ -621,6 +621,7 @@ struct Arena : public Allocator {
         current_block = NULL;
     }
 };
+
 
 /////////////////////
 ///    Hashing    ///
