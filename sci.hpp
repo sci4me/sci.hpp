@@ -1564,6 +1564,9 @@ SCI_DEF s32 run_tests();
 #define SCI_IMPL_DONE 
 
 
+#define SCI_MANGLE(x) _sci_hpp_internal_##x
+
+
 //////////////////////
 ///    OS Misc.    ///
 //////////////////////
@@ -1575,13 +1578,17 @@ SCI_DEF s32 run_tests();
 #endif
 
 
-u64 get_page_size() {
+static u64 SCI_MANGLE(page_size);
+
+u64 get_page_size() { return SCI_MANGLE(page_size); }
+
+static_init void init_page_size() {
 #ifdef SCI_OS_WINDOWS
     SYSTEM_INFO info;
     GetSystemInfo(&info);
-    return cast(u64, info.dwPageSize);
+    SCI_MANGLE(page_size) = cast(u64, info.dwPageSize);
 #else
-    return sysconf(_SC_PAGESIZE);
+    SCI_MANGLE(page_size) = sysconf(_SC_PAGESIZE);
 #endif
 }
 
@@ -1941,6 +1948,10 @@ s32 run_tests() {
 	return EXIT_FAILURE;
 #endif
 }
+
+
+
+#undef SCI_MANGLE
 
 
 #endif
